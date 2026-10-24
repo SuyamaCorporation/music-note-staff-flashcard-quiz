@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music Note Staff Position Flashcard Quiz</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-amber-50 to-rose-50 min-h-screen">
+<div class="max-w-xl mx-auto p-4">
+  <header class="mb-4 text-center">
+    <h1 class="text-2xl font-bold text-amber-800">Music Note Staff Quiz</h1>
+    <p class="text-gray-500 text-sm mt-1">Identify the note shown on the staff</p>
+  </header>
+
+  <!-- Mode Select -->
+  <div class="flex gap-2 justify-center mb-4 no-answer">
+    <button onclick="setMode('treble')" id="btnTreble" class="px-4 py-1.5 rounded-full text-sm font-medium border-2 border-amber-400 bg-amber-400 text-white">Treble</button>
+    <button onclick="setMode('bass')" id="btnBass" class="px-4 py-1.5 rounded-full text-sm font-medium border-2 border-gray-300 text-gray-600 bg-white">Bass</button>
+    <button onclick="setMode('both')" id="btnBoth" class="px-4 py-1.5 rounded-full text-sm font-medium border-2 border-gray-300 text-gray-600 bg-white">Both</button>
+  </div>
+
+  <!-- Stats -->
+  <div class="flex justify-around bg-white rounded-xl shadow p-3 mb-4">
+    <div class="text-center">
+      <div class="text-xl font-bold text-green-600" id="correct">0</div>
+      <div class="text-xs text-gray-400">Correct</div>
+    </div>
+    <div class="text-center">
+      <div class="text-xl font-bold text-red-500" id="wrong">0</div>
+      <div class="text-xs text-gray-400">Wrong</div>
+    </div>
+    <div class="text-center">
+      <div class="text-xl font-bold text-amber-600" id="streak">0</div>
+      <div class="text-xs text-gray-400">Streak</div>
+    </div>
+    <div class="text-center">
+      <div class="text-xl font-bold text-gray-700" id="accuracy">—</div>
+      <div class="text-xs text-gray-400">Accuracy</div>
+    </div>
+  </div>
+
+  <!-- Staff SVG -->
+  <div class="bg-white rounded-2xl shadow p-4 mb-4">
+    <div class="text-xs text-center text-gray-400 mb-2" id="clefLabel">Treble Clef</div>
+    <svg id="staffSvg" viewBox="0 0 320 160" width="100%" height="160" aria-label="Musical staff with note" role="img">
+    </svg>
+    <div id="feedback" class="text-center mt-2 font-semibold text-lg hidden" aria-live="polite"></div>
+  </div>
+
+  <!-- Note Buttons -->
+  <div class="grid grid-cols-7 gap-2 mb-4" id="noteButtons">
+    <button onclick="guess('C')" class="bg-white border-2 border-gray-200 hover:border-amber-400 rounded-xl py-3 text-lg font-bold text-gray-800 transition" aria-label="Note C">C</button>
+    <button onclick="guess('D')" class="bg-white border-2 border-gray-200 hover:border-amber-400 rounded-xl py-3 text-lg font-bold text-gray-800 transition" aria-label="Note D">D</button>
+    <button onclick="guess('E')" class="bg-white border-2 border-gray-200 hover:border-amber-400 rounded-xl py-3 text-lg font-bold text-gray-800 transition" aria-label="Note E">E</button>
+    <button onclick="guess('F')" class="bg-white border-2 border-gray-200 hover:border-amber-400 rounded-xl py-3 text-lg font-bold text-gray-800 transition" aria-label="Note F">F</button>
+    <button onclick="guess('G')" class="bg-white border-2 border-gray-200 hover:border-amber-400 rounded-xl py-3 text-lg font-bold text-gray-800 transition" aria-label="Note G">G</button>
+    <button onclick="guess('A')" class="bg-white border-2 border-gray-200 hover:border-amber-400 rounded-xl py-3 text-lg font-bold text-gray-800 transition" aria-label="Note A">A</button>
+    <button onclick="guess('B')" class="bg-white border-2 border-gray-200 hover:border-amber-400 rounded-xl py-3 text-lg font-bold text-gray-800 transition" aria-label="Note B">B</button>
+  </div>
+
+  <button id="nextBtn" onclick="nextNote()" class="hidden w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition">Next Note →</button>
+</div>
+
+<script>
+// Staff layout: 5 lines, each line y-pos in SVG
+// Treble clef note positions (y value per step, step = half-space)
+// Staff center (B4) line4, and we go up/down
+// Lines (from bottom): E4, G4, B4, D5, F5
+// Spaces: F4, A4, C5, E5
+// We'll use position index: 0=C4 (ledger below), 1=D4, 2=E4(line1), 3=F4, 4=G4(line2)...
+
+const STAFF_TOP = 20;
+const LINE_SPACING = 10; // pixels between staff lines
+const LINES_Y = [STAFF_TOP, STAFF_TOP+LINE_SPACING, STAFF_TOP+2*LINE_SPACING, STAFF_TOP+3*LINE_SPACING, STAFF_TOP+4*LINE_SPACING];
+// LINES_Y[0]=top=F5, [1]=D5, [2]=B4, [3]=G4, [4]=E4
+const STEP = LINE_SPACING / 2; // half-space
+
+// Treble: step 0 = E4 (bottom line), step increases upward
+// Steps from E4: E4=0,F4=1,G4=2,A4=3,B4=4,C5=5,D5=6,E5=7,F5=8,G5=9, A5=10
+// Also ledger below: D4=-1, C4=-2
+const TREBLE_NOTES = [
+  { name:'C4', step:-2, label:'C', octave:4 },
+  { name:'D4', step:-1, label:'D', octave:4 },
+  { name:'E4', step:0,  label:'E', octave:4 },
+  { name:'F4', step:1,  label:'F', octave:4 },
+  { name:'G4', step:2,  label:'G', octave:4 },
+  { name:'A4', step:3,  label:'A', octave:4 },
+  { name:'B4', step:4,  label:'B', octave:4 },
+  { name:'C5', step:5,  label:'C', octave:5 },
+  { name:'D5', step:6,  label:'D', octave:5 },
+  { name:'E5', step:7,  label:'E', octave:5 },
+  { name:'F5', step:8,  label:'F', octave:5 },
+  { name:'G5', step:9,  label:'G', octave:5 },
+];
+
+// Bass: step 0 = G2 (bottom line), up: G2,A2,B2,C3,D3,E3,F3,G3,A3,B3,C4
+// Lines: G2=0, B2=2, D3=4, F3=6, A3=8
+// Extra: F2=-1, E2=-2 (ledger below), B3=9, C4=10 (above)
+const BASS_NOTES = [
+  { name:'E2', step:-2, label:'E', octave:2 },
+  { name:'F2', step:-1, label:'F', octave:2 },
+  { name:'G2', step:0,  label:'G', octave:2 },
+  { name:'A2', step:1,  label:'A', octave:2 },
+  { name:'B2', step:2,  label:'B', octave:2 },
+  { name:'C3', step:3,  label:'C', octave:3 },
+  { name:'D3', step:4,  label:'D', octave:3 },
+  { name:'E3', step:5,  label:'E', octave:3 },
+  { name:'F3', step:6,  label:'F', octave:3 },
+  { name:'G3', step:7,  label:'G', octave:3 },
+  { name:'A3', step:8,  label:'A', octave:3 },
+  { name:'B3', step:9,  label:'B', octave:3 },
+  { name:'C4', step:10, label:'C', octave:4 },
+];
+
+let mode = 'treble';
+let currentNote = null;
+let answered = false;
+let cCorrect = 0, cWrong = 0, cStreak = 0;
+
+function setMode(m) {
+  mode = m;
+  ['treble','bass','both'].forEach(n => {
+    const btn = document.getElementById('btn'+n.charAt(0).toUpperCase()+n.slice(1));
+    if (n === m) btn.className = 'px-4 py-1.5 rounded-full text-sm font-medium border-2 border-amber-400 bg-amber-400 text-white';
+    else btn.className = 'px-4 py-1.5 rounded-full text-sm font-medium border-2 border-gray-300 text-gray-600 bg-white';
+  });
+  nextNote();
+}
+
+function stepToY(step) {
+  // step 0 = bottom line = LINES_Y[4]
+  // each step up = -STEP px
+  return LINES_Y[4] - step * STEP;
+}
+
+function drawStaff(svg, noteStep, clef) {
+  let html = '';
+  const W = 320, X_START = 60, X_END = 280, NOTE_X = 200, R = 7;
+
+  // Draw 5 staff lines
+  for (let i = 0; i < 5; i++) {
+    const y = LINES_Y[i];
+    html += `<line x1="${X_START}" y1="${y}" x2="${X_END}" y2="${y}" stroke="#374151" stroke-width="1.5"/>`;
+  }
+
+  // Ledger lines
+  const noteY = stepToY(noteStep);
+  if (noteStep <= -1) {
+    for (let s = -1; s >= noteStep; s -= (s%2===0?2:1)) {
+      if (s % 2 === 0) { // only on line positions
+        const ly = stepToY(s);
+        html += `<line x1="${NOTE_X-14}" y1="${ly}" x2="${NOTE_X+14}" y2="${ly}" stroke="#374151" stroke-width="1.5"/>`;
+      }
+    }
+    if (noteStep === -1) { // always draw for -1
+      const ly = stepToY(-1); // not on a line, skip
+    }
+    // For step -1 (space below bottom): ledger line at step 0 if step<0
+    if (noteStep <= -2) {
+      const ly = stepToY(-2);
+      html += `<line x1="${NOTE_X-14}" y1="${ly}" x2="${NOTE_X+14}" y2="${ly}" stroke="#374151" stroke-width="1.5"/>`;
+    }
+  }
+  if (noteStep >= 10) {
+    for (let s = 10; s <= noteStep; s += 2) {
+      const ly = stepToY(s);
+      html += `<line x1="${NOTE_X-14}" y1="${ly}" x2="${NOTE_X+14}" y2="${ly}" stroke="#374151" stroke-width="1.5"/>`;
+    }
+  }
+
+  // Clef symbol
+  if (clef === 'treble') {
+    html += `<text x="18" y="${LINES_Y[4]+8}" font-size="72" font-family="serif" fill="#374151" style="line-height:1">𝄞</text>`;
+  } else {
+    html += `<text x="20" y="${LINES_Y[1]+10}" font-size="44" font-family="serif" fill="#374151">𝄢</text>`;
+  }
+
+  // Note (filled ellipse)
+  html += `<ellipse cx="${NOTE_X}" cy="${noteY}" rx="${R+1}" ry="${R}" fill="#1e40af" stroke="#1e3a8a" stroke-width="1" transform="rotate(-15 ${NOTE_X} ${noteY})"/>`;
+  // Stem
+  const stemDir = noteStep >= 5 ? 1 : -1;
+  const stemY1 = noteY + stemDir * 7;
+  const stemY2 = noteY + stemDir * 40;
+  html += `<line x1="${NOTE_X + (stemDir > 0 ? -8 : 8)}" y1="${stemY1}" x2="${NOTE_X + (stemDir > 0 ? -8 : 8)}" y2="${stemY2}" stroke="#1e40af" stroke-width="2"/>`;
+
+  svg.innerHTML = html;
+}
+
+function nextNote() {
+  answered = false;
+  document.getElementById('feedback').classList.add('hidden');
+  document.getElementById('nextBtn').classList.add('hidden');
+
+  const pool = mode === 'treble' ? TREBLE_NOTES : mode === 'bass' ? BASS_NOTES : [...TREBLE_NOTES, ...BASS_NOTES];
+  currentNote = pool[Math.floor(Math.random() * pool.length)];
+  const isTreele = TREBLE_NOTES.includes(currentNote);
+  const clef = isTreele ? 'treble' : 'bass';
+
+  document.getElementById('clefLabel').textContent = clef === 'treble' ? 'Treble Clef' : 'Bass Clef';
+  drawStaff(document.getElementById('staffSvg'), currentNote.step, clef);
+
+  // Reset note button styles
+  document.querySelectorAll('#noteButtons button').forEach(b => {
+    b.className = 'bg-white border-2 border-gray-200 hover:border-amber-400 rounded-xl py-3 text-lg font-bold text-gray-800 transition';
+    b.disabled = false;
+  });
+}
+
+function guess(note) {
+  if (answered) return;
+  answered = true;
+  const isCorrect = note === currentNote.label;
+  const feedEl = document.getElementById('feedback');
+
+  document.querySelectorAll('#noteButtons button').forEach(b => {
+    const n = b.textContent.trim();
+    if (n === currentNote.label) b.className = b.className.replace('border-gray-200', 'border-green-500') + ' bg-green-100';
+    if (n === note && !isCorrect) b.className = b.className.replace('border-gray-200', 'border-red-500') + ' bg-red-100';
+    b.disabled = true;
+  });
+
+  if (isCorrect) {
+    cCorrect++; cStreak++;
+    feedEl.textContent = `✓ Correct! ${currentNote.name}`;
+    feedEl.className = 'text-center mt-2 font-semibold text-lg text-green-600';
+  } else {
+    cWrong++; cStreak = 0;
+    feedEl.textContent = `✗ The note is ${currentNote.name} (${currentNote.label})`;
+    feedEl.className = 'text-center mt-2 font-semibold text-lg text-red-600';
+  }
+  feedEl.classList.remove('hidden');
+  document.getElementById('nextBtn').classList.remove('hidden');
+
+  const total = cCorrect + cWrong;
+  document.getElementById('correct').textContent = cCorrect;
+  document.getElementById('wrong').textContent = cWrong;
+  document.getElementById('streak').textContent = cStreak;
+  document.getElementById('accuracy').textContent = total > 0 ? Math.round(cCorrect/total*100) + '%' : '—';
+}
+
+nextNote();
+</script>
+</body>
+</html>
